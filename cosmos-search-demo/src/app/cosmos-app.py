@@ -7,11 +7,13 @@ import json
 from datetime import datetime
 import pandas as pd
 from azure.cosmos import CosmosClient, exceptions, PartitionKey
+from azure.identity import DefaultAzureCredential, ManagedIdentityCredential, AzureCliCredential
 from dotenv import load_dotenv
 import time
+import requests
 
-# Load environment variables
-load_dotenv()
+# Load environment variables - override system variables with .env file values
+load_dotenv(override=True)
 
 st.set_page_config(page_title="Ignite 2024 Demo", layout="wide", initial_sidebar_state="expanded")
 # UI text strings
@@ -28,11 +30,29 @@ hybrid_search_label = "Hybrid search"
 
 # Initialize global variables for Cosmos DB client, database, and containers
 if "cosmos_client" not in st.session_state:
-    endpoint = os.getenv("AZURE_COSMOSDB_ENDPOINT")
-    key = os.getenv("AZURE_COSMOSDB_KEY")
-    st.session_state.cosmos_client = CosmosClient(endpoint, credential=key)
-    database_name = 'ignite2024demo'  # Replace with your database name
-    st.session_state.cosmos_database = st.session_state.cosmos_client.create_database_if_not_exists(database_name)
+    endpoint = os.getenv("COSMOS_FABCON_URI")
+    key = os.getenv("COSMOS_FABCON_KEY")
+    
+    # Check if credentials are properly configured
+    if not endpoint or endpoint == "your_cosmos_db_uri_here" or not key or key == "your_cosmos_db_key_here":
+        st.error("❌ Cosmos DB credentials not configured. Please update the .env file with your actual Cosmos DB URI and Key.")
+        st.info("💡 The app will work for reranker testing, but search functionality requires Cosmos DB credentials.")
+        st.session_state.cosmos_client = None
+        st.session_state.cosmos_database = None
+        st.session_state.cosmos_container_qflat = None
+        st.session_state.cosmos_container_diskann = None
+    else:
+        try:
+            st.session_state.cosmos_client = CosmosClient(endpoint, credential=key)
+            database_name = 'fabcon25demo'  # Replace with your database name
+            st.session_state.cosmos_database = st.session_state.cosmos_client.create_database_if_not_exists(database_name)
+        except Exception as e:
+            st.error(f"Failed to connect to Cosmos DB: {str(e)}")
+            st.info("Please check your COSMOS_DB_ENDPOINT and COSMOS_DB_KEY in the .env file")
+            st.session_state.cosmos_client = None
+            st.session_state.cosmos_database = None
+            st.session_state.cosmos_container_qflat = None
+            st.session_state.cosmos_container_diskann = None
 
     # Define the vector property and dimensions
     cosmos_vector_property = "embedding"
@@ -100,37 +120,39 @@ if "cosmos_client" not in st.session_state:
     }
 
     # Create listings_search container without any index
-    container_name = 'search'
-    st.session_state.cosmos_container = st.session_state.cosmos_database.create_container_if_not_exists(
-        id=container_name,
-        partition_key=PartitionKey(path="/id"),
-        full_text_policy=full_text_policy,
-        vector_embedding_policy=vector_embedding_policy,
-        offer_throughput=10000
-    )
+    # container_name = 'search'
+    # st.session_state.cosmos_container = st.session_state.cosmos_database.create_container_if_not_exists(
+    #     id=container_name,
+    #     partition_key=PartitionKey(path="/id"),
+    #     full_text_policy=full_text_policy,
+    #     vector_embedding_policy=vector_embedding_policy#,
+    #     #offer_throughput=1000
+    # )
 
 
-    # Create listings_search_qflat container with QFLAT vector index
-    container_name_qflat = 'search_qflat'
-    st.session_state.cosmos_container_qflat = st.session_state.cosmos_database.create_container_if_not_exists(
-        id=container_name_qflat,
-        partition_key=PartitionKey(path="/id"),
-        full_text_policy=full_text_policy,
-        vector_embedding_policy=vector_embedding_policy,
-        indexing_policy=qflat_indexing_policy,
-        offer_throughput=10000
-    )
+    # Create containers only if we have a valid database connection
+    if st.session_state.cosmos_database is not None:
+        # Create listings_search_qflat container with QFLAT vector index
+        container_name_qflat = 'search_qflat'
+        st.session_state.cosmos_container_qflat = st.session_state.cosmos_database.create_container_if_not_exists(
+            id=container_name_qflat,
+            partition_key=PartitionKey(path="/id"),
+            full_text_policy=full_text_policy,
+            vector_embedding_policy=vector_embedding_policy,
+            indexing_policy=qflat_indexing_policy,
+            offer_throughput=400
+        )
 
-    # Create listings_search_diskann container with DiskANN vector index
-    container_name_diskann = 'search_diskann'
-    st.session_state.cosmos_container_diskann = st.session_state.cosmos_database.create_container_if_not_exists(
-        id=container_name_diskann,
-        partition_key=PartitionKey(path="/id"),
-        full_text_policy=full_text_policy,
-        vector_embedding_policy=vector_embedding_policy,
-        indexing_policy=diskann_indexing_policy,
-        offer_throughput=10000
-    )
+        # Create listings_search_diskann container with DiskANN vector index
+        container_name_diskann = 'search_diskann'
+        st.session_state.cosmos_container_diskann = st.session_state.cosmos_database.create_container_if_not_exists(
+            id=container_name_diskann,
+            partition_key=PartitionKey(path="/id"),
+            full_text_policy=full_text_policy,
+            vector_embedding_policy=vector_embedding_policy,
+            indexing_policy=diskann_indexing_policy,
+            offer_throughput=400
+        )
 
 # Initialize session state variables
 if "embedding_gen_time" not in st.session_state:
@@ -152,11 +174,26 @@ def log_time(start):
 
 # Initialize the embedding client only once
 if "embedding_client" not in st.session_state:
-    st.session_state.embedding_client = AzureOpenAI(
-        api_key=os.getenv("AZURE_OPENAI_APIKEY"),
-        api_version="2023-05-15",
-        azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT")
-    )
+    try:
+        st.session_state.embedding_client = AzureOpenAI(
+            api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+            api_version="2023-05-15",
+            azure_endpoint=os.getenv("OPENAI_ENDPOINT")
+        )
+    except TypeError as e:
+        if "proxies" in str(e):
+            # Fallback for Python 3.13 compatibility issues
+            import httpx
+            # Create a custom httpx client without the problematic arguments
+            custom_client = httpx.Client()
+            st.session_state.embedding_client = AzureOpenAI(
+                api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+                api_version="2023-05-15",
+                azure_endpoint=os.getenv("OPENAI_ENDPOINT"),
+                http_client=custom_client
+            )
+        else:
+            raise e
 
 # Handler functions
 def embedding_query(text_input):
@@ -174,6 +211,226 @@ def embedding_query(text_input):
     print(f"Embedding generation time: {st.session_state.embedding_gen_time}")
     return embedding
 
+def get_reranker_credentials():
+    """
+    Get appropriate credentials for the reranker service based on the environment.
+    For production: Use ManagedIdentityCredential with specific client_id
+    For local development: Use AzureCliCredential with tenant_id
+    """
+    
+    # Debug environment variables
+    tenant_id = os.getenv("AZURE_TENANT_ID")
+    client_id = os.getenv("AZURE_CLIENT_ID")
+    print(f"🔍 Environment variables - AZURE_TENANT_ID: {tenant_id}")
+    print(f"🔍 Environment variables - AZURE_CLIENT_ID: {client_id}")
+    
+    # Check if running in Azure (managed identity available)
+    if os.getenv('MSI_ENDPOINT') or os.getenv('IDENTITY_ENDPOINT'):
+        print("Running in Azure environment - using Managed Identity")
+        if not client_id:
+            raise ValueError("AZURE_CLIENT_ID environment variable is required for managed identity")
+        return ManagedIdentityCredential(client_id=client_id)
+    
+    # For local development
+    print("Running locally - using Azure CLI credential")
+    if not tenant_id:
+        raise ValueError("AZURE_TENANT_ID environment variable is required for local development")
+    print(f"Note: Make sure you're logged in with 'az login --tenant {tenant_id}'")
+    return AzureCliCredential(tenant_id=tenant_id)
+
+def rerank_results(query, results_df, use_reranker=False):
+    """
+    Rerank search results using Azure's semantic reranker service.
+    
+    Args:
+        query: The search query string
+        results_df: DataFrame containing search results with 'text' column
+        use_reranker: Boolean flag to enable/disable reranking
+    
+    Returns:
+        DataFrame with reranked results (or original if reranker disabled/failed)
+    """
+    print(f"🔍 Reranker input - use_reranker: {use_reranker}")
+    print(f"🔍 Reranker input - query: '{query}'")
+    print(f"🔍 Reranker input - results_df shape: {results_df.shape if not results_df.empty else 'empty'}")
+    print(f"🔍 Reranker input - results_df columns: {list(results_df.columns) if not results_df.empty else 'none'}")
+    
+    if not use_reranker or results_df.empty:
+        print("🔍 Reranker skipped - either disabled or no results")
+        return results_df
+    
+    try:
+        # Get credentials and access token
+        credentials = get_reranker_credentials()
+        access_token = credentials.get_token("https://dbinference.azure.com/.default")
+        
+        headers = {
+            "Authorization": f"Bearer {access_token.token}",
+            "Content-Type": "application/json"
+        }
+        
+        # Prepare documents for reranking
+        documents = results_df['text'].tolist() if 'text' in results_df.columns else []
+        
+        print(f"🔍 Reranker input - documents count: {len(documents)}")
+        if documents:
+            print(f"🔍 Reranker input - first document preview: '{documents[0][:100]}...'")
+        
+        if not documents:
+            print("No text content found in results for reranking")
+            return results_df
+        
+        body = {
+            "query": query,
+            "documents": documents,
+            "return_documents": True,
+            "top_k": len(documents),  # Return all documents reranked
+            "batch_size": 1
+        }
+        
+        print(f"🔍 Reranker request body: {json.dumps(body, indent=2)[:500]}...")
+        
+        # Get reranker endpoint from environment
+        reranker_endpoint = os.getenv("RERANKER_ENDPOINT")
+        if not reranker_endpoint:
+            print("⚠ RERANKER_ENDPOINT environment variable not set")
+            return results_df
+        
+        # Make request to reranker service
+        response = requests.post(
+            reranker_endpoint, 
+            headers=headers, 
+            json=body
+        )
+        
+        if response.status_code == 200:
+            reranked_data = response.json()
+            print(f"✓ Reranker response: {reranked_data}")
+            
+            # Handle the specific Azure reranker response format
+            if 'Scores' in reranked_data:
+                scores_data = reranked_data['Scores']
+                print(f"✓ Found {len(scores_data)} scored documents in response")
+                
+                # The response already contains documents sorted by score
+                # Each item in Scores is: {'document': 'text...', 'score': 0.99}
+                reranked_df = pd.DataFrame()
+                
+                for i, score_item in enumerate(scores_data):
+                    document_text = score_item.get('document', '')
+                    score = score_item.get('score', 0)
+                    
+                    print(f"  Processing item {i+1}: score={score}, doc_preview='{document_text[:50]}...'")
+                    
+                    # Find the original row by matching text content exactly
+                    # This preserves all original columns including ID, title, similarity scores, etc.
+                    matching_rows = results_df[results_df['text'] == document_text]
+                    
+                    if len(matching_rows) > 0:
+                        # Take the first match (should be unique)
+                        original_row = matching_rows.iloc[0].copy()
+                        
+                        # Log what we're preserving from the original
+                        original_id = original_row.get('id', 'N/A')
+                        original_title = original_row.get('title', 'N/A')
+                        print(f"    ✓ Matched with original ID: {original_id}, Title: '{str(original_title)[:30]}...'")
+                        
+                        # Add reranker score while preserving all other original data
+                        original_row['reranker_score'] = score
+                        original_row['reranker_rank'] = i + 1  # Add rank position for reference
+                        
+                        # Append to reranked DataFrame (maintaining reranker order)
+                        reranked_df = pd.concat([reranked_df, original_row.to_frame().T], ignore_index=True)
+                        
+                    else:
+                        print(f"    ⚠ Could not find matching row for document text")
+                        print(f"        Looking for: '{document_text[:100]}...'")
+                        print(f"        Available text previews in results_df:")
+                        for idx, row in results_df.iterrows():
+                            text_preview = str(row.get('text', ''))[:100]
+                            print(f"          Row {idx}: '{text_preview}...'")
+                
+                if len(reranked_df) > 0:
+                    print(f"✓ Successfully reranked {len(reranked_df)} results")
+                    print(f"✓ Original columns preserved: {list(reranked_df.columns)}")
+                    print(f"✓ Final order (by reranker): {list(reranked_df.get('id', ['N/A']*len(reranked_df)))}")
+                    return reranked_df
+                else:
+                    print("⚠ Could not match any reranked results with original data")
+                    print("⚠ Returning original results without reranking")
+                    return results_df
+                    
+            # Fallback for other response formats
+            elif 'results' in reranked_data:
+                reranked_results = reranked_data['results']
+                print(f"✓ Processing {len(reranked_results)} reranked results")
+                # Create a new DataFrame with reranked order
+                reranked_df = pd.DataFrame()
+                
+                for i, result in enumerate(reranked_results):
+                    # Handle different result formats
+                    document_text = None
+                    score = None
+                    
+                    if isinstance(result, dict):
+                        # Try different field names for document text
+                        document_text = result.get('document') or result.get('text') or result.get('content')
+                        score = result.get('score') or result.get('relevance_score') or result.get('similarity')
+                    elif isinstance(result, str):
+                        # Result might be just the document text
+                        document_text = result
+                    
+                    if document_text:
+                        # Find the original row by matching text content
+                        original_idx = results_df[results_df['text'] == document_text].index
+                        if len(original_idx) > 0:
+                            reranked_row = results_df.loc[original_idx[0]].copy()
+                            # Add reranker score if available
+                            if score is not None:
+                                reranked_row['reranker_score'] = score
+                            else:
+                                # Use position as implicit score (lower is better)
+                                reranked_row['reranker_position'] = i + 1
+                            reranked_df = pd.concat([reranked_df, reranked_row.to_frame().T], ignore_index=True)
+                
+                if len(reranked_df) > 0:
+                    print(f"✓ Successfully reranked {len(reranked_df)} results")
+                    return reranked_df
+                else:
+                    print("⚠ Could not match reranked results with original data")
+                    return results_df
+            else:
+                print(f"⚠ Could not find Scores or results in reranker response. Available keys: {list(reranked_data.keys()) if isinstance(reranked_data, dict) else 'Response is not a dict'}")
+                return results_df
+        else:
+            print(f"⚠ Reranker service returned status {response.status_code}: {response.text}")
+            return results_df
+            
+    except Exception as e:
+        print(f"⚠ Reranking failed: {e}")
+        
+        # Provide helpful error messages based on error type
+        error_msg = str(e)
+        if "Failed to invoke the Azure CLI" in error_msg:
+            print("💡 Reranker authentication failed. This could be because:")
+            print("   1. Azure CLI is not logged in")
+            print("   2. Azure CLI is logged in to a different tenant")
+            print("   3. Your account doesn't have access to the reranker service")
+            print(f"   4. Try running: az login --tenant {os.getenv('AZURE_TENANT_ID', 'your-tenant-id')}")
+            print("   5. Alternatively, disable the reranker checkbox to continue without reranking")
+        elif "TimeoutExpired" in error_msg:
+            print("💡 Azure CLI command timed out. Try:")
+            print("   1. Check your network connection")
+            print("   2. Try running 'az account show' to verify CLI status")
+            print("   3. Disable the reranker checkbox to continue without reranking")
+        
+        import traceback
+        traceback.print_exc()
+        
+        # Return original results when reranking fails
+        print("🔄 Returning original search results without reranking")
+        return results_df
+
 def handler_vector_search(indices, ask):
     emb = embedding_query(ask)
     num_results = 10
@@ -188,7 +445,7 @@ def handler_vector_search(indices, ask):
     obfuscated_query = vector_search_query.replace(str(emb), "REDACTED")
 
     container = {
-        'No Index': st.session_state.cosmos_container,
+        #'No Index': st.session_state.cosmos_container,
         'QFLAT & Full Text Search Index': st.session_state.cosmos_container_qflat,
         'DiskANN & Full Text Search Index': st.session_state.cosmos_container_diskann
     }.get(indices)
@@ -199,7 +456,16 @@ def handler_vector_search(indices, ask):
         results = container.query_items(vector_search_query, enable_cross_partition_query=True, populate_query_metrics=True)
         results_list = list(results)
         elapsed_time = log_time(start_time)
-        st.session_state.suggested_listings = pd.DataFrame(results_list)
+        
+        # Create DataFrame from results
+        results_df = pd.DataFrame(results_list)
+        
+        # Apply reranking if enabled
+        use_reranker = st.session_state.get("use_reranker", False)
+        if use_reranker:
+            results_df = rerank_results(ask, results_df, use_reranker)
+        
+        st.session_state.suggested_listings = results_df
         st.session_state.query_time = elapsed_time
         st.session_state.ru_consumed = container.client_connection.last_response_headers['x-ms-request-charge']
         total_execution_time = parse_server_query_time(container.client_connection.last_response_headers['x-ms-documentdb-query-metrics'])
@@ -230,7 +496,7 @@ def handler_text_search(indices, text, search_type):
         '''
 
     container = {
-        'No Index': st.session_state.cosmos_container,
+        #'No Index': st.session_state.cosmos_container,
         'QFLAT & Full Text Search Index': st.session_state.cosmos_container_qflat,
         'DiskANN & Full Text Search Index': st.session_state.cosmos_container_diskann
     }.get(indices)
@@ -241,7 +507,16 @@ def handler_text_search(indices, text, search_type):
         results = container.query_items(full_text_search_query, enable_cross_partition_query=True, populate_query_metrics=True)
         results_list = list(results)
         elapsed_time = log_time(start_time)
-        st.session_state.suggested_listings = pd.DataFrame(results_list)
+        
+        # Create DataFrame from results
+        results_df = pd.DataFrame(results_list)
+        
+        # Apply reranking if enabled
+        use_reranker = st.session_state.get("use_reranker", False)
+        if use_reranker:
+            results_df = rerank_results(text, results_df, use_reranker)
+        
+        st.session_state.suggested_listings = results_df
         st.session_state.query_time = elapsed_time
         st.session_state.ru_consumed = container.client_connection.last_response_headers['x-ms-request-charge']
         total_execution_time = parse_server_query_time(container.client_connection.last_response_headers['x-ms-documentdb-query-metrics'])
@@ -265,7 +540,7 @@ def handler_text_ranking(indices, text):
     '''
 
     container = {
-        'No Index': st.session_state.cosmos_container,
+        #'No Index': st.session_state.cosmos_container,
         'QFLAT & Full Text Search Index': st.session_state.cosmos_container_qflat,
         'DiskANN & Full Text Search Index': st.session_state.cosmos_container_diskann
     }.get(indices)
@@ -276,7 +551,16 @@ def handler_text_ranking(indices, text):
         results = container.query_items(full_text_ranking_query, enable_cross_partition_query=True,populate_query_metrics=True)
         results_list = list(results)
         elapsed_time = log_time(start_time)
-        st.session_state.suggested_listings = pd.DataFrame(results_list)
+        
+        # Create DataFrame from results
+        results_df = pd.DataFrame(results_list)
+        
+        # Apply reranking if enabled
+        use_reranker = st.session_state.get("use_reranker", False)
+        if use_reranker:
+            results_df = rerank_results(text, results_df, use_reranker)
+        
+        st.session_state.suggested_listings = results_df
         st.session_state.query_time = elapsed_time
         st.session_state.ru_consumed = container.client_connection.last_response_headers['x-ms-request-charge']
         total_execution_time = parse_server_query_time(container.client_connection.last_response_headers['x-ms-documentdb-query-metrics'])
@@ -302,7 +586,7 @@ def handler_hybrid_ranking(indices, text):
     obfuscated_query = full_hybrid_ranking_query.replace(str(emb), "REDACTED")
 
     container = {
-        'No Index': st.session_state.cosmos_container,
+        #'No Index': st.session_state.cosmos_container,
         'QFLAT & Full Text Search Index': st.session_state.cosmos_container_qflat,
         'DiskANN & Full Text Search Index': st.session_state.cosmos_container_diskann
     }.get(indices)
@@ -313,7 +597,16 @@ def handler_hybrid_ranking(indices, text):
         results = container.query_items(full_hybrid_ranking_query, enable_cross_partition_query=True,populate_query_metrics=True)
         results_list = list(results)
         elapsed_time = log_time(start_time)
-        st.session_state.suggested_listings = pd.DataFrame(results_list)
+        
+        # Create DataFrame from results
+        results_df = pd.DataFrame(results_list)
+        
+        # Apply reranking if enabled
+        use_reranker = st.session_state.get("use_reranker", False)
+        if use_reranker:
+            results_df = rerank_results(text, results_df, use_reranker)
+        
+        st.session_state.suggested_listings = results_df
         st.session_state.query_time = elapsed_time
         st.session_state.ru_consumed = container.client_connection.last_response_headers['x-ms-request-charge']
         total_execution_time = parse_server_query_time(container.client_connection.last_response_headers['x-ms-documentdb-query-metrics'])
@@ -342,6 +635,9 @@ def render_search():
     with st.sidebar:
         st.selectbox(label="Index", options=['No Index', 'QFLAT & Full Text Search Index', 'DiskANN & Full Text Search Index'], index=0, key="index_selection")
         st.text_input(label=semantic_search_header, placeholder=semantic_search_placeholder, key="user_query")
+        
+        # Add reranker checkbox
+        st.checkbox("Use Semantic Reranker", key="use_reranker", help="Apply semantic reranking to search results using Azure's reranker service")
 
         if "user_query" in st.session_state and st.session_state.user_query != "":
             search_disabled = False
@@ -375,6 +671,12 @@ def render_search_result():
     col1.write(f"Total end-to-end query execution time: {st.session_state.query_time}")
     col1.write(f"Total server query execution time: {st.session_state.server_query_time}")
     col1.write(f"RU consumed: {st.session_state.ru_consumed}")
+    
+    # Show reranker status
+    use_reranker = st.session_state.get("use_reranker", False)
+    reranker_applied = use_reranker and "reranker_score" in st.session_state.suggested_listings.columns
+    col1.write(f"Semantic reranking: {'✓ Applied' if reranker_applied else '✗ Not applied'}")
+    
     col1.write(f"Found {len(st.session_state.suggested_listings)} records.")
     col1.table(st.session_state.suggested_listings)
 
