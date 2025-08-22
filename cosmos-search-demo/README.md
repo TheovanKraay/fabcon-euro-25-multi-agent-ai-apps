@@ -1,6 +1,6 @@
 # FABCON Europe 2025 Search Demo with Azure Cosmos DB + Semantic Reranking
 
-This repository contains a Python Streamlit application that demonstrates advanced search capabilities using Azure Cosmos DB, OpenAI embeddings, and Azure's semantic reranker service. The application showcases vector search, full text search, text ranking, and hybrid search with intelligent semantic reranking to improve result relevance.
+This repository contains a Python Streamlit application that demonstrates advanced search capabilities using Azure Cosmos DB, OpenAI embeddings, and semantic reranking. The application showcases vector search, full text search, text ranking, and hybrid search with intelligent semantic reranking to improve result relevance.
 
 ![screenshot](media/screen-shot.png)
 
@@ -12,7 +12,7 @@ This repository contains a Python Streamlit application that demonstrates advanc
   - 🔄 **Hybrid search** combining semantic and full text search
   - 📊 **Text ranking** for enhanced result ordering
 - **🎯 Semantic Reranking** (NEW):
-  - Integration with Azure's semantic reranker service
+  - Integration with semantic reranker (private preview - public and GA SDK surface area will change)
   - Interactive UI toggle to enable/disable reranking
   - Preserves original metadata while improving result relevance
   - Smart authentication handling for local and Azure environments
@@ -28,9 +28,9 @@ This repository contains a Python Streamlit application that demonstrates advanc
 
 ## Prerequisites
 
-- [Azure Cosmos DB](https://azure.microsoft.com/services/cosmos-db/) account with NoSQL API
+- [Azure Cosmos DB](https://azure.microsoft.com/services/cosmos-db/) account with NoSQL API with vector search and full text search enabled.
 - [Azure OpenAI](https://azure.microsoft.com/products/ai-services/openai-service) account
-- **Azure semantic reranker service** (for enhanced result ranking)
+- **Whitelisted access to a reranker account** (for enhanced result ranking - this will be transparently created when semantic reranker is public/GA). Please reach out to Cosmos DB team for access. 
 - [Azure CLI](https://docs.microsoft.com/cli/azure/install-azure-cli) (for local reranker authentication)
 
 ## 🚀 Quick Start
@@ -55,7 +55,7 @@ Edit `src/app/.env` with your actual Azure service credentials:
 ```env
 # Azure Cosmos DB Configuration
 COSMOS_FABCON_URI=https://your-cosmos-db.documents.azure.com:443/
-COSMOS_FABCON_KEY=your_cosmos_db_key_here
+# COSMOS_FABCON_KEY=your_cosmos_db_key_here  # Optional: Leave empty for identity-based auth
 
 # Azure OpenAI Configuration
 AZURE_OPENAI_API_KEY=your_openai_api_key_here
@@ -67,7 +67,22 @@ AZURE_CLIENT_ID=your_client_id_here
 RERANKER_ENDPOINT=https://your-reranker.dbinference.azure.com/inference/semanticReranking
 ```
 
-### 3. Install Dependencies
+### 3. Choose Authentication Method
+
+The app supports two authentication methods for Cosmos DB:
+
+**🔑 Key-based Authentication (Traditional)**:
+- Provide `COSMOS_FABCON_KEY` in your .env file
+- Uses the master key for database access
+- Works in any environment
+
+**🆔 Identity-based Authentication (Recommended)**:
+- Leave `COSMOS_FABCON_KEY` empty or commented out
+- Uses `DefaultAzureCredential` (Managed Identity in Azure, Azure CLI locally)
+- More secure, no secrets in configuration
+- Requires appropriate RBAC permissions on Cosmos DB
+
+### 4. Install Dependencies
 
 ```sh
 pip install -r src/app/requirements.txt
@@ -132,16 +147,23 @@ cosmos-search-demo/
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `COSMOS_FABCON_URI` | Azure Cosmos DB endpoint | ✅ |
-| `COSMOS_FABCON_KEY` | Azure Cosmos DB key | ✅ |
+| `COSMOS_FABCON_KEY` | Azure Cosmos DB key | 🔑 |
 | `AZURE_OPENAI_API_KEY` | Azure OpenAI API key | ✅ |
 | `OPENAI_ENDPOINT` | Azure OpenAI endpoint | ✅ |
 | `AZURE_TENANT_ID` | Azure tenant ID for reranker | 🎯 |
 | `AZURE_CLIENT_ID` | Azure client ID for reranker | 🎯 |
 | `RERANKER_ENDPOINT` | Semantic reranker service endpoint | 🎯 |
 
+*🔑 = Optional for Cosmos DB (uses DefaultAzureCredential if not provided)*
 *🎯 = Required for semantic reranking feature*
 
 ### Authentication Modes:
+
+**Cosmos DB Authentication:**
+- **Key-based**: Uses master key when `COSMOS_FABCON_KEY` is provided
+- **Identity-based**: Uses `DefaultAzureCredential` when key is omitted (Managed Identity in Azure, Azure CLI locally)
+
+**Reranker Authentication:**
 - **Local Development**: Uses Azure CLI authentication (`AzureCliCredential`)
 - **Azure Deployment**: Uses Managed Identity authentication (`ManagedIdentityCredential`)
 - **Automatic Detection**: Switches based on environment (MSI_ENDPOINT presence)

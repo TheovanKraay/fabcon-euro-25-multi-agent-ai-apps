@@ -33,22 +33,47 @@ if "cosmos_client" not in st.session_state:
     endpoint = os.getenv("COSMOS_FABCON_URI")
     key = os.getenv("COSMOS_FABCON_KEY")
     
-    # Check if credentials are properly configured
-    if not endpoint or endpoint == "your_cosmos_db_uri_here" or not key or key == "your_cosmos_db_key_here":
-        st.error("❌ Cosmos DB credentials not configured. Please update the .env file with your actual Cosmos DB URI and Key.")
-        st.info("💡 The app will work for reranker testing, but search functionality requires Cosmos DB credentials.")
+    # Check if endpoint is configured
+    if not endpoint or endpoint == "your_cosmos_db_uri_here":
+        st.error("❌ Cosmos DB endpoint not configured. Please update the .env file with your actual Cosmos DB URI.")
+        st.info("💡 The app will work for reranker testing, but search functionality requires Cosmos DB endpoint.")
         st.session_state.cosmos_client = None
         st.session_state.cosmos_database = None
         st.session_state.cosmos_container_qflat = None
         st.session_state.cosmos_container_diskann = None
     else:
         try:
-            st.session_state.cosmos_client = CosmosClient(endpoint, credential=key)
+            # Determine authentication method
+            if key and key != "your_cosmos_db_key_here":
+                # Use key-based authentication
+                st.info("🔑 Using key-based authentication for Cosmos DB")
+                credential = key
+            else:
+                # Use DefaultAzureCredential for identity-based authentication
+                st.info("🆔 Using DefaultAzureCredential for Cosmos DB (Managed Identity/Azure CLI)")
+                credential = DefaultAzureCredential()
+            
+            st.session_state.cosmos_client = CosmosClient(endpoint, credential=credential)
             database_name = 'fabcon25demo'  # Replace with your database name
             st.session_state.cosmos_database = st.session_state.cosmos_client.create_database_if_not_exists(database_name)
+            
+            # Show success message with authentication method
+            auth_method = "Key-based" if isinstance(credential, str) else "Identity-based"
+            st.success(f"✅ Connected to Cosmos DB using {auth_method} authentication")
+            
         except Exception as e:
             st.error(f"Failed to connect to Cosmos DB: {str(e)}")
-            st.info("Please check your COSMOS_DB_ENDPOINT and COSMOS_DB_KEY in the .env file")
+            
+            # Provide specific guidance based on authentication method
+            if key and key != "your_cosmos_db_key_here":
+                st.info("Please check your COSMOS_FABCON_URI and COSMOS_FABCON_KEY in the .env file")
+            else:
+                st.info("💡 Identity-based authentication failed. This could be because:")
+                st.info("   • Azure CLI is not logged in (run 'az login')")
+                st.info("   • Managed Identity is not configured properly")
+                st.info("   • Your account doesn't have access to the Cosmos DB resource")
+                st.info("   • Try providing COSMOS_FABCON_KEY in .env for key-based authentication")
+            
             st.session_state.cosmos_client = None
             st.session_state.cosmos_database = None
             st.session_state.cosmos_container_qflat = None
