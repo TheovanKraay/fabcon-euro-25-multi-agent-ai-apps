@@ -658,7 +658,7 @@ def parse_server_query_time(query_metrics):
 def render_search():
     search_disabled = True
     with st.sidebar:
-        st.selectbox(label="Index", options=['No Index', 'QFLAT & Full Text Search Index', 'DiskANN & Full Text Search Index'], index=0, key="index_selection")
+        st.selectbox(label="Index", options=['QFLAT & Full Text Search Index', 'DiskANN & Full Text Search Index'], index=0, key="index_selection")
         st.text_input(label=semantic_search_header, placeholder=semantic_search_placeholder, key="user_query")
         
         # Add reranker checkbox
