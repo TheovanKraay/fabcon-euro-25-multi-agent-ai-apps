@@ -2,6 +2,7 @@ import os
 import time
 import random
 from azure.cosmos import CosmosClient, exceptions
+from azure.identity import DefaultAzureCredential
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -9,7 +10,6 @@ load_dotenv()
 
 # Initialize Cosmos DB client
 endpoint = os.getenv("COSMOS_FABCON_URI")
-key = os.getenv("COSMOS_FABCON_KEY")
 
 def delete_container_with_retry(database, container_name):
     """Delete a container with exponential backoff retry on rate limiting."""
@@ -42,7 +42,7 @@ def delete_container_with_retry(database, container_name):
     return False
 
 def drop_containers():
-    client = CosmosClient(endpoint, key)
+    client = CosmosClient(endpoint, credential=DefaultAzureCredential())
     database_name = 'fabcon25demo'
     
     try:

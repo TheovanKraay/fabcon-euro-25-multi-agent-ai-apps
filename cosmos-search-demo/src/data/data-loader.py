@@ -7,15 +7,18 @@ from asyncio import Semaphore
 
 import requests
 from azure.cosmos import CosmosClient, PartitionKey, exceptions
+from azure.identity import DefaultAzureCredential
 from dotenv import load_dotenv
 from openai import AzureOpenAI
 
 # Load environment variables
-load_dotenv()
+import os
+script_dir = os.path.dirname(os.path.abspath(__file__))
+env_path = os.path.join(script_dir, '..', 'app', '.env')
+load_dotenv(env_path, override=True)
 
 # Initialize Cosmos DB client
 endpoint = os.getenv("COSMOS_FABCON_URI")
-key = os.getenv("COSMOS_FABCON_KEY")
 
 # Initialize OpenAI client with Python 3.13 compatibility
 try:
@@ -41,7 +44,7 @@ except TypeError as e:
 
 
 def initialize_cosmos(database_name):
-    client = CosmosClient(endpoint, key)
+    client = CosmosClient(endpoint, credential=DefaultAzureCredential())
     
     # Create database if it doesn't exist
     database = client.create_database_if_not_exists(database_name)
@@ -127,7 +130,7 @@ def initialize_cosmos(database_name):
     containers[container_name_qflat] = database.create_container_if_not_exists(
         id=container_name_qflat,
         partition_key=PartitionKey(path="/id"),
-        full_text_policy=full_text_policy,
+        # full_text_policy=full_text_policy,  # Temporarily commented out for compatibility
         vector_embedding_policy=vector_embedding_policy,
         indexing_policy=qflat_indexing_policy,
         offer_throughput=400
@@ -138,7 +141,7 @@ def initialize_cosmos(database_name):
     containers[container_name_diskann] = database.create_container_if_not_exists(
         id=container_name_diskann,
         partition_key=PartitionKey(path="/id"),
-        full_text_policy=full_text_policy,
+        # full_text_policy=full_text_policy,  # Temporarily commented out for compatibility
         vector_embedding_policy=vector_embedding_policy,
         indexing_policy=diskann_indexing_policy,
         offer_throughput=400

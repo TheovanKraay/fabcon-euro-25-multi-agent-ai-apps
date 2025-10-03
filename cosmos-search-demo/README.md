@@ -53,18 +53,21 @@ cp src/app/.env.template src/app/.env
 Edit `src/app/.env` with your actual Azure service credentials:
 
 ```env
-# Azure Cosmos DB Configuration
+# Azure Cosmos DB Configuration (Keyless Authentication)
 COSMOS_FABCON_URI=https://your-cosmos-db.documents.azure.com:443/
-# COSMOS_FABCON_KEY=your_cosmos_db_key_here  # Optional: Leave empty for identity-based auth
 
 # Azure OpenAI Configuration
 AZURE_OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_ENDPOINT=https://your-openai.openai.azure.com/
 
-# Azure Identity Configuration for Reranker
-AZURE_TENANT_ID=your_tenant_id_here
-AZURE_CLIENT_ID=your_client_id_here
-RERANKER_ENDPOINT=https://your-reranker.dbinference.azure.com/inference/semanticReranking
+# Semantic Reranker Configuration (NEW - Preview SDK)
+AZURE_COSMOS_SEMANTIC_RERANKER_INFERENCE_ENDPOINT=https://your-reranker-endpoint.dbinference.azure.com
+
+# Legacy variables (no longer needed with keyless auth and built-in reranker):
+# COSMOS_FABCON_KEY=your_cosmos_db_key_here
+# AZURE_TENANT_ID=your_tenant_id_here
+# AZURE_CLIENT_ID=your_client_id_here
+# RERANKER_ENDPOINT=https://your-reranker.dbinference.azure.com/inference/semanticReranking
 ```
 
 ### 3. Choose Authentication Method
@@ -98,9 +101,28 @@ az login --tenant your_tenant_id_here
 
 ### 5. Run the Application
 
+#### Option A: Basic Run (may have SDK environment variable issues)
 ```sh
 streamlit run src/app/cosmos-app.py
 ```
+
+#### Option B: Run with Environment Variables Exported (Recommended for Semantic Reranker)
+
+For the semantic reranker to work properly with the preview Cosmos SDK, you need to export environment variables in the same session. Use this single command:
+
+**PowerShell (Windows):**
+```powershell
+$env:AZURE_COSMOS_SEMANTIC_RERANKER_INFERENCE_ENDPOINT = "https://your-reranker-endpoint.dbinference.azure.com"; $env:AZURE_COSMOS_INFERENCE_ENDPOINT = "https://your-reranker-endpoint.dbinference.azure.com"; $env:COSMOS_INFERENCE_ENDPOINT = "https://your-reranker-endpoint.dbinference.azure.com"; .\.venv\Scripts\Activate.ps1; cd "cosmos-search-demo\src\app"; streamlit run cosmos-app.py --server.port 8501
+```
+
+**Bash (Linux/macOS):**
+```bash
+export AZURE_COSMOS_SEMANTIC_RERANKER_INFERENCE_ENDPOINT="https://your-reranker-endpoint.dbinference.azure.com" && export AZURE_COSMOS_INFERENCE_ENDPOINT="https://your-reranker-endpoint.dbinference.azure.com" && export COSMOS_INFERENCE_ENDPOINT="https://your-reranker-endpoint.dbinference.azure.com" && source .venv/bin/activate && cd cosmos-search-demo/src/app && streamlit run cosmos-app.py --server.port 8501
+```
+
+> **💡 Important Note**: The preview Cosmos SDK has known issues where environment variables aren't always read correctly. The above commands export multiple potential variable names that the SDK might be looking for, ensuring proper functionality.
+
+Replace `https://your-reranker-endpoint.dbinference.azure.com` with your actual semantic reranker endpoint.
 
 ## 🎯 Using the Semantic Reranker
 
@@ -147,15 +169,18 @@ cosmos-search-demo/
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `COSMOS_FABCON_URI` | Azure Cosmos DB endpoint | ✅ |
-| `COSMOS_FABCON_KEY` | Azure Cosmos DB key | 🔑 |
 | `AZURE_OPENAI_API_KEY` | Azure OpenAI API key | ✅ |
 | `OPENAI_ENDPOINT` | Azure OpenAI endpoint | ✅ |
-| `AZURE_TENANT_ID` | Azure tenant ID for reranker | 🎯 |
-| `AZURE_CLIENT_ID` | Azure client ID for reranker | 🎯 |
-| `RERANKER_ENDPOINT` | Semantic reranker service endpoint | 🎯 |
+| `AZURE_COSMOS_SEMANTIC_RERANKER_INFERENCE_ENDPOINT` | Semantic reranker service endpoint (Preview SDK) | 🎯 |
+| `COSMOS_FABCON_KEY` | Azure Cosmos DB key (Legacy - use keyless auth instead) | 🔑 |
+| `AZURE_TENANT_ID` | Azure tenant ID for reranker (Legacy) | 🚫 |
+| `AZURE_CLIENT_ID` | Azure client ID for reranker (Legacy) | 🚫 |
+| `RERANKER_ENDPOINT` | External reranker service endpoint (Legacy) | 🚫 |
 
-*🔑 = Optional for Cosmos DB (uses DefaultAzureCredential if not provided)*
-*🎯 = Required for semantic reranking feature*
+*✅ = Required*  
+*🎯 = Required for semantic reranking feature*  
+*🔑 = Optional (uses DefaultAzureCredential if not provided)*  
+*🚫 = Legacy/Deprecated (no longer needed with Cosmos SDK integration)*
 
 ### Authentication Modes:
 
