@@ -133,13 +133,19 @@ The application includes Azure Cosmos DB's built-in semantic reranker for improv
 - **Seamless Authentication**: Uses the same DefaultAzureCredential as Cosmos DB
 
 ### How to Use:
-1. **Check the "Use Semantic Reranker" checkbox** in the sidebar
-2. **Perform any search** (vector, text, or hybrid)
-3. **Compare results** with and without reranking enabled
-4. **View reranking status** in the results display
+1. **Start the app with the reranker endpoint exported** (see Run the Application section)
+2. **Check the "Use Semantic Reranker" checkbox** in the sidebar
+3. **Perform any search** (vector, text, or hybrid)
+4. **Compare results** with and without reranking enabled
+5. **View reranking status** in the results display
+
+### Requirements:
+- **Endpoint Configuration**: Must set `AZURE_COSMOS_SEMANTIC_RERANKER_INFERENCE_ENDPOINT`
+- **Environment Export**: Must export the endpoint variable during app startup
+- **Authentication**: Uses your existing Cosmos DB credentials (DefaultAzureCredential)
 
 ### Benefits:
-- **No External Dependencies**: Reranking is built into Cosmos DB
+- **Built-in SDK Integration**: No external API calls required
 - **Consistent Authentication**: Uses your existing Cosmos DB credentials
 - **Automatic Fallback**: App continues working even if reranking fails
 
@@ -169,10 +175,12 @@ cosmos-search-demo/
 | `COSMOS_FABCON_URI` | Azure Cosmos DB endpoint | ✅ |
 | `AZURE_OPENAI_API_KEY` | Azure OpenAI API key | ✅ |
 | `OPENAI_ENDPOINT` | Azure OpenAI endpoint | ✅ |
+| `AZURE_COSMOS_SEMANTIC_RERANKER_INFERENCE_ENDPOINT` | Semantic reranker endpoint (required for reranker functionality) | 🎯 |
 
-*✅ = Required*
+*✅ = Required*  
+*🎯 = Required for semantic reranking feature*
 
-**Note**: Semantic reranking is built into the Cosmos DB SDK and uses the same authentication as your Cosmos DB connection (DefaultAzureCredential).
+**Note**: Semantic reranking uses the built-in Cosmos DB SDK but requires the endpoint configuration and must be exported as an environment variable during application startup.
 
 ### Authentication:
 
