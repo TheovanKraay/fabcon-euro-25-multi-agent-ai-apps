@@ -59,10 +59,13 @@ COSMOS_FABCON_URI=https://your-cosmos-db.documents.azure.com:443/
 AZURE_OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_ENDPOINT=https://your-openai.openai.azure.com/
 
+# Semantic Reranker Configuration (Required for built-in reranker)
+AZURE_COSMOS_SEMANTIC_RERANKER_INFERENCE_ENDPOINT=https://your-reranker-endpoint.dbinference.azure.com
+
 # Notes:
 # - DefaultAzureCredential is used for Cosmos DB authentication (no key required)
 # - Ensure your Azure identity has "Cosmos DB Built-in Data Contributor" role
-# - Semantic reranking now uses built-in Cosmos SDK functionality
+# - Semantic reranking uses built-in Cosmos SDK but requires endpoint configuration
 # - In Azure environments, authentication happens automatically via Managed Identity
 # - For local development, use 'az login' to authenticate via Azure CLI
 ```
@@ -92,9 +95,31 @@ az login
 
 ### 6. Run the Application
 
+#### Option A: Basic Run (for testing without semantic reranker)
 ```sh
 streamlit run src/app/cosmos-app.py --server.port 8501
 ```
+
+#### Option B: Run with Semantic Reranker Support (Recommended)
+
+For the semantic reranker to work properly with the preview Cosmos SDK, you need to export the endpoint environment variable in the same session:
+
+**PowerShell (Windows):**
+```powershell
+$env:AZURE_COSMOS_SEMANTIC_RERANKER_INFERENCE_ENDPOINT = "https://your-reranker-endpoint.dbinference.azure.com"; streamlit run src/app/cosmos-app.py --server.port 8501
+```
+
+**For development with virtual environment:**
+```powershell
+$env:AZURE_COSMOS_SEMANTIC_RERANKER_INFERENCE_ENDPOINT = "https://your-reranker-endpoint.dbinference.azure.com"; .\.venv\Scripts\Activate.ps1; cd "cosmos-search-demo\src\app"; streamlit run cosmos-app.py --server.port 8501
+```
+
+**Bash (Linux/macOS):**
+```bash
+export AZURE_COSMOS_SEMANTIC_RERANKER_INFERENCE_ENDPOINT="https://your-reranker-endpoint.dbinference.azure.com" && streamlit run src/app/cosmos-app.py --server.port 8501
+```
+
+> **💡 Important Note**: Replace `https://your-reranker-endpoint.dbinference.azure.com` with your actual semantic reranker endpoint. The preview Cosmos SDK requires this environment variable to be exported in the same session as the application startup.
 
 ## 🎯 Using the Semantic Reranker
 
